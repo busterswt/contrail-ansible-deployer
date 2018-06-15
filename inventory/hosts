@@ -1,7 +1,7 @@
 localhost:
   hosts:
     localhost:
-      config_file: ../config/instances.yaml
+      config_file: /etc/openstack_deploy/user_opencontrail_config.yaml
       connection: local
       ansible_connection: local
       python_interpreter: python

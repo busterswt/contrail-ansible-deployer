@@ -148,9 +148,10 @@
     - not (kolla_config.kolla_globals.enable_haproxy | bool)
   tags:
    - always
+
 - name: get the internal VIP from internal_vip if haproxy is enabled
   set_fact:
-    openstack_internal_vip: "{{ kolla_config.kolla_globals.kolla_internal_vip_address }}"
+    openstack_internal_vip: "{{ internal_lb_vip_address }}"
   when:
     - contrail_configuration.CLOUD_ORCHESTRATOR == 'openstack'
     - kolla_config.kolla_globals.enable_haproxy is not defined or (kolla_config.kolla_globals.enable_haproxy | bool)
