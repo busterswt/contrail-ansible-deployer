@@ -1,0 +1,144 @@
+---
+# Copyright 2018, Rackspace US, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Download requirements
+  hosts: aio1
+  gather_facts: no
+  tags:
+    - neutron
+  tasks:
+
+    - name: Download Contrail vRouter Components
+      vars:
+      - dlpath: https://github.com/busterswt/contrail-openstack/raw/master
+      get_url:
+        url: "{{ dlpath }}/{{ item }}"
+        dest: /var/tmp
+        mode: 0440
+      with_items:
+        - contrail-vrouter-module.tar
+        - contrail_tools.tar
+        - vrouter-port-control.tar
+      tags: always
+      
+- name: Lay down Contrail bits on Compute nodes
+  hosts: compute_all
+  gather_facts: yes
+  tags:
+    - neutron
+  tasks:
+
+    - name: Create Contrail directory
+      file: path=/opt/contrail state=directory
+
+    - name: Unpack contrail-vrouter-module on compute node
+      unarchive:
+        src: /var/tmp/contrail-vrouter-module.tar
+        dest: /opt/contrail
+      tags:
+        - dkms
+
+    - name: Unpack contrail_tools on compute node
+      unarchive:
+        src: "{{ item }}"
+        dest: /usr/bin
+      with_items:
+        - /var/tmp/vrouter-port-control.tar
+        - /var/tmp/contrail_tools.tar
+      tags:
+        - tools
+
+    - name: update apt cache
+      apt:
+        update_cache: yes
+      register: apt_update
+      tags:
+        - apt
+
+    - name: install build-essential
+      apt:
+        name: build-essential
+        state: present
+      tags:
+        - apt
+
+    - name: Ensure correct kernel headers are installed.
+      shell: "apt -y install linux-headers-$(uname -r)"
+      tags:
+        - dkms
+
+    - name: install build deps
+      apt:
+        name: "{{ item }}"
+      with_items:
+        - dkms
+      tags:
+        - dkms
+
+    - name: Create Contrail Source directory
+      file: path=/usr/src/vrouter-{{ opencontrail_kernel_version }} state=directory
+      tags:
+        - dkms
+
+    - name: Unpack contrail vrouter source
+      unarchive:
+        src: /opt/contrail/contrail-vrouter-module/modules/contrail-vrouter/contrail-vrouter-{{ opencontrail_kernel_version }}.tar.gz
+        dest: /usr/src/vrouter-{{ opencontrail_kernel_version }}
+      tags:
+        - dkms
+
+    - name: copy dkms configuration file
+      template:
+        src: templates/dkms.conf.j2
+        dest: /usr/src/vrouter-{{ opencontrail_kernel_version }}/dkms.conf
+        owner: root
+        group: root
+        mode: 0400
+      tags:
+        - dkms
+
+    - name: Remove module via dkms
+      command: dkms rm -m vrouter -v "{{ opencontrail_kernel_version }}"
+      ignore_errors: yes
+      tags:
+        - dkms
+
+    - name: Add module via dkms
+      command: dkms add -m vrouter -v "{{ opencontrail_kernel_version }}"
+      ignore_errors: yes
+      tags:
+        - dkms
+
+    - name: Build module via dkms
+      command: dkms build -m vrouter -v "{{ opencontrail_kernel_version }}"
+      tags:
+        - dkms
+
+    - name: Install module via dkms
+      command: dkms install -m vrouter -v "{{ opencontrail_kernel_version }}"
+      tags:
+        - dkms
+
+    - name: Rebuild kernel initramfs
+      command: update-initramfs -c -k all
+      tags:
+        - dkms
+
+    - name: Insert kernel module
+      modprobe:
+        name: vrouter
+        state: present
+      tags:
+        - dkms
